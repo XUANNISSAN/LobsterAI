@@ -687,8 +687,9 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
     const hasAccessibleUserModel = availableModels.some(
       model => !model.isServerModel && model.accessible !== false
     );
+    const loginFreeMode = configService.getConfig().loginFreeMode === true;
     if (!isLoggedIn && !hasAccessibleUserModel) {
-      return ModelAccessPromptKind.Login;
+      return loginFreeMode ? ModelAccessPromptKind.LocalModel : ModelAccessPromptKind.Login;
     }
     if (isModelAgenticBlocked(effectiveSelectedModel)) {
       return ModelAccessPromptKind.AgenticNotReady;
@@ -697,7 +698,8 @@ const CoworkPromptInput = React.forwardRef<CoworkPromptInputRef, CoworkPromptInp
       effectiveSelectedModel?.providerKey === ProviderName.LobsteraiServer
       && effectiveSelectedModel.accessible === false
     ) {
-      return isLoggedIn ? ModelAccessPromptKind.Subscribe : ModelAccessPromptKind.Login;
+      if (isLoggedIn) return ModelAccessPromptKind.Subscribe;
+      return loginFreeMode ? ModelAccessPromptKind.LocalModel : ModelAccessPromptKind.Login;
     }
     return null;
   }, [

@@ -20,6 +20,7 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import { getProviderIcon, ProviderIconId } from '../providers/uiRegistry';
 import { authService } from '../services/auth';
+import { configService } from '../services/config';
 import { i18nService } from '../services/i18n';
 import {
   readRememberedModelThinkingLevel,
@@ -96,6 +97,7 @@ export interface ModelSelectorChangeMeta {
 export const ModelAccessPromptKind = {
   AgenticNotReady: 'agentic_not_ready',
   Login: 'login',
+  LocalModel: 'local_model',
   Subscribe: 'subscribe',
 } as const;
 export type ModelAccessPromptKind = typeof ModelAccessPromptKind[keyof typeof ModelAccessPromptKind];
@@ -119,20 +121,27 @@ export const ModelAccessPromptModal: React.FC<ModelAccessPromptModalProps> = ({
 }) => {
   const agenticNotReadyPrompt = promptKind === ModelAccessPromptKind.AgenticNotReady;
   const loginPrompt = promptKind === ModelAccessPromptKind.Login;
+  const localModelPrompt = promptKind === ModelAccessPromptKind.LocalModel;
   const resolvedTitleKey = titleKey ?? (
     agenticNotReadyPrompt
       ? 'modelSelectorAgenticNotReadyTitle'
-      : loginPrompt ? 'modelSelectorLoginTitle' : 'modelSelectorSubscribeTitle'
+      : loginPrompt ? 'modelSelectorLoginTitle'
+        : localModelPrompt ? 'modelSelectorLocalModelTitle'
+          : 'modelSelectorSubscribeTitle'
   );
   const resolvedDescriptionKey = descriptionKey ?? (
     agenticNotReadyPrompt
       ? 'serverModelAgenticNotReady'
-      : loginPrompt ? 'modelSelectorLoginDesc' : 'modelSelectorSubscribeDesc'
+      : loginPrompt ? 'modelSelectorLoginDesc'
+        : localModelPrompt ? 'modelSelectorLocalModelDesc'
+          : 'modelSelectorSubscribeDesc'
   );
   const resolvedPrimaryButtonKey = primaryButtonKey ?? (
     agenticNotReadyPrompt
       ? 'modelSelectorAgenticNotReadyBtn'
-      : loginPrompt ? 'modelSelectorLoginBtn' : 'modelSelectorSubscribeBtn'
+      : loginPrompt ? 'modelSelectorLoginBtn'
+        : localModelPrompt ? 'modelSelectorLocalModelBtn'
+          : 'modelSelectorSubscribeBtn'
   );
 
   const openSubscriptionPage = async () => {
@@ -147,11 +156,24 @@ export const ModelAccessPromptModal: React.FC<ModelAccessPromptModalProps> = ({
       await authService.login();
       return;
     }
+    if (promptKind === ModelAccessPromptKind.LocalModel) {
+      // Login-free mode: steer the user to local/custom model configuration.
+      onClose();
+      window.dispatchEvent(new CustomEvent('lobsterai:openSettings', {
+        detail: { initialTab: 'model' },
+      }));
+      return;
+    }
     if (promptKind === ModelAccessPromptKind.AgenticNotReady) {
       onClose();
       return;
     }
     await openSubscriptionPage();
+  };
+
+  const handleLogin = async () => {
+    onClose();
+    await authService.login();
   };
 
   return (
@@ -192,6 +214,15 @@ export const ModelAccessPromptModal: React.FC<ModelAccessPromptModalProps> = ({
           className="mt-3 w-full text-center text-sm text-secondary transition-colors hover:text-foreground"
         >
           {i18nService.t('modelSelectorLearnMore')}
+        </button>
+      )}
+      {localModelPrompt && (
+        <button
+          type="button"
+          onClick={() => { void handleLogin(); }}
+          className="mt-3 w-full text-center text-sm text-secondary transition-colors hover:text-foreground"
+        >
+          {i18nService.t('modelSelectorLocalModelLogin')}
         </button>
       )}
     </Modal>
@@ -585,7 +616,13 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       return;
     }
     if (model && model.accessible === false) {
-      setRestrictedPrompt(isLoggedIn ? ModelAccessPromptKind.Subscribe : ModelAccessPromptKind.Login);
+      setRestrictedPrompt(
+        isLoggedIn
+          ? ModelAccessPromptKind.Subscribe
+          : configService.getConfig().loginFreeMode === true
+            ? ModelAccessPromptKind.LocalModel
+            : ModelAccessPromptKind.Login,
+      );
       setHoveredModel(null);
       setIsOpen(false);
       return;

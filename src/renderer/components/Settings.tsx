@@ -3,6 +3,7 @@ import React, { useCallback,useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { AppSettingsAutoLaunchErrorCode } from '../../shared/appSettings/constants';
+import type { PortableModeStatus } from '../../shared/appSettings/portableMode';
 import { type AppUpdateInfo,type AppUpdateRuntimeState,AppUpdateSource,AppUpdateStatus } from '../../shared/appUpdate/constants';
 import {
   type BrowserWebAccessConfig,
@@ -117,6 +118,10 @@ const getAutoLaunchErrorMessage = (errorCode?: string): string => {
   }
   return i18nService.t('autoLaunchUpdateFailed');
 };
+
+const interpolateI18n = (template: string, vars: Record<string, string>): string => (
+  template.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? vars[name] : match))
+);
 
 const formatBackupSize = (sizeBytes?: number): string => {
   if (!Number.isFinite(sizeBytes) || !sizeBytes || sizeBytes <= 0) return '';
@@ -1402,6 +1407,16 @@ const Settings: React.FC<SettingsProps> = ({
   const [useSystemProxy, setUseSystemProxy] = useState(false);
   const [sqliteAutoBackupEnabled, setSqliteAutoBackupEnabled] = useState(false);
   const [usageAnalyticsEnabled, setUsageAnalyticsEnabled] = useState(true);
+  const [loginFreeMode, setLoginFreeMode] = useState(false);
+  const [autoUpdateCheckEnabled, setAutoUpdateCheckEnabled] = useState(true);
+  const [portableStatus, setPortableStatus] = useState<PortableModeStatus | null>(null);
+  const [isUpdatingPortableMode, setIsUpdatingPortableMode] = useState(false);
+  const [portableModeRequest, setPortableModeRequest] = useState<boolean | null>(null);
+  const [portableModeResult, setPortableModeResult] = useState<{
+    migrated: boolean;
+    sourceDir: string;
+    targetDir: string;
+  } | null>(null);
   const [taskCompletionNotificationMode, setTaskCompletionNotificationMode] =
     useState<TaskCompletionNotificationMode>(TaskCompletionNotificationMode.Unfocused);
   const [permissionNotificationsEnabled, setPermissionNotificationsEnabled] = useState(true);
@@ -1656,6 +1671,40 @@ const Settings: React.FC<SettingsProps> = ({
       }, 3000);
     }
   }, [appVersion, authUser, updateCheckStatus, onUpdateFound]);
+
+  const refreshPortableStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.portableMode.getStatus();
+      setPortableStatus(status);
+    } catch (err) {
+      console.error('[Settings] failed to load portable mode status:', err);
+    }
+  }, []);
+
+  const finalizePortableModeToggle = useCallback(async (enabled: boolean) => {
+    if (isUpdatingPortableMode) return;
+    setIsUpdatingPortableMode(true);
+    setError(null);
+    try {
+      const result = await window.electron.portableMode.set(enabled);
+      if (result.success) {
+        setPortableModeResult({
+          migrated: result.migrated,
+          sourceDir: result.sourceDir,
+          targetDir: result.targetDir,
+        });
+        await refreshPortableStatus();
+      } else {
+        setError(result.error || i18nService.t('portableModeUpdateFailed'));
+      }
+    } catch (err) {
+      console.error('[Settings] failed to change portable mode:', err);
+      setError(i18nService.t('portableModeUpdateFailed'));
+    } finally {
+      setPortableModeRequest(null);
+      setIsUpdatingPortableMode(false);
+    }
+  }, [isUpdatingPortableMode, refreshPortableStatus]);
 
   const updateButtonLabel = useMemo(() => {
     if (
@@ -1984,6 +2033,9 @@ const Settings: React.FC<SettingsProps> = ({
       setUseSystemProxy(config.useSystemProxy ?? false);
       setSqliteAutoBackupEnabled(config.sqliteAutoBackupEnabled === true);
       setUsageAnalyticsEnabled(config.usageAnalyticsEnabled !== false);
+      setLoginFreeMode(config.loginFreeMode === true);
+      setAutoUpdateCheckEnabled(config.autoUpdateCheckEnabled !== false);
+      void refreshPortableStatus();
       {
         const notificationSettings = normalizeNotificationSettings(config.notificationSettings);
         setTaskCompletionNotificationMode(notificationSettings.taskCompletionNotificationMode);
@@ -2222,7 +2274,7 @@ const Settings: React.FC<SettingsProps> = ({
     } catch {
       setError('Failed to load settings');
     }
-  }, []);
+  }, [refreshPortableStatus]);
 
   useEffect(() => {
     const initialUiFontSize = initialUiFontSizeRef.current;
@@ -3455,6 +3507,8 @@ const Settings: React.FC<SettingsProps> = ({
         useSystemProxy,
         sqliteAutoBackupEnabled,
         usageAnalyticsEnabled,
+        loginFreeMode,
+        autoUpdateCheckEnabled,
         notificationSettings: normalizeNotificationSettings({
           taskCompletionNotificationMode,
           permissionNotificationsEnabled,
@@ -4927,6 +4981,60 @@ const Settings: React.FC<SettingsProps> = ({
               </SettingsRow>
             </SettingsGroup>
 
+            {/* Group: Runtime mode (login-free / portable / update checks) */}
+            <SettingsGroup title={i18nService.t('settingsGroupRuntime')}>
+              <SettingsRow>
+                <SettingsToggleRow
+                  title={i18nService.t('loginFreeMode')}
+                  description={i18nService.t('loginFreeModeDescription')}
+                  checked={loginFreeMode}
+                  onToggle={() => {
+                    setLoginFreeMode((prev) => !prev);
+                  }}
+                />
+              </SettingsRow>
+
+              <SettingsRow>
+                <SettingsToggleRow
+                  title={i18nService.t('autoUpdateCheckEnabled')}
+                  description={i18nService.t('autoUpdateCheckEnabledDescription')}
+                  checked={autoUpdateCheckEnabled}
+                  onToggle={() => {
+                    setAutoUpdateCheckEnabled((prev) => !prev);
+                  }}
+                />
+              </SettingsRow>
+
+              <SettingsRow>
+                <SettingsToggleRow
+                  title={i18nService.t('portableMode')}
+                  description={i18nService.t('portableModeDescription')}
+                  checked={portableStatus?.active === true}
+                  disabled={!portableStatus?.supported || isUpdatingPortableMode}
+                  onToggle={() => {
+                    if (!portableStatus) return;
+                    setError(null);
+                    setPortableModeRequest(!portableStatus.active);
+                  }}
+                />
+                {portableStatus?.supported === false ? (
+                  <p className="mt-1 text-sm text-secondary">
+                    {i18nService.t('portableModeNotSupported')}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-secondary">
+                    {portableStatus?.active
+                      ? interpolateI18n(i18nService.t('portableModeDataDirActive'), {
+                          path: portableStatus.dataDir ?? '',
+                        })
+                      : interpolateI18n(i18nService.t('portableModeDataDirDefault'), {
+                          path: portableStatus?.defaultUserDataDir ?? '',
+                        })}
+                  </p>
+                )}
+              </SettingsRow>
+            </SettingsGroup>
+
             {/* Group: Notifications */}
             <SettingsGroup
               title={i18nService.t('settingsGroupNotifications')}
@@ -5074,6 +5182,102 @@ const Settings: React.FC<SettingsProps> = ({
                 />
               </SettingsRow>
             </SettingsGroup>
+
+            {/* Portable mode confirm + restart-to-apply dialogs */}
+            {portableModeRequest !== null && portableStatus && (
+              <Modal
+                onClose={() => setPortableModeRequest(null)}
+                overlayClassName="fixed inset-0 z-[10050] flex items-center justify-center modal-backdrop px-4"
+                className="modal-content w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-modal"
+              >
+                <h3 className="text-base font-semibold leading-6 text-foreground">
+                  {i18nService.t(
+                    portableModeRequest
+                      ? 'portableModeEnableTitle'
+                      : 'portableModeDisableTitle',
+                  )}
+                </h3>
+                <p className="mt-2 text-sm leading-5 text-secondary">
+                  {interpolateI18n(
+                    i18nService.t(
+                      portableModeRequest
+                        ? 'portableModeEnableDescription'
+                        : 'portableModeDisableDescription',
+                    ),
+                    {
+                      from: portableModeRequest
+                        ? portableStatus.defaultUserDataDir
+                        : (portableStatus.dataDir ?? ''),
+                      to: portableModeRequest
+                        ? (portableStatus.dataDir ?? '')
+                        : portableStatus.defaultUserDataDir,
+                    },
+                  )}
+                </p>
+                <p className="mt-2 text-xs leading-4 text-secondary">
+                  {i18nService.t('portableModeMigrateNote')}
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPortableModeRequest(null)}
+                    className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-raised"
+                  >
+                    {i18nService.t('cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUpdatingPortableMode}
+                    onClick={() => {
+                      void finalizePortableModeToggle(portableModeRequest);
+                    }}
+                    className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isUpdatingPortableMode
+                      ? i18nService.t('processing')
+                      : i18nService.t('confirm')}
+                  </button>
+                </div>
+              </Modal>
+            )}
+
+            {portableModeResult && (
+              <Modal
+                onClose={() => setPortableModeResult(null)}
+                overlayClassName="fixed inset-0 z-[10050] flex items-center justify-center modal-backdrop px-4"
+                className="modal-content w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-modal"
+              >
+                <h3 className="text-base font-semibold leading-6 text-foreground">
+                  {i18nService.t('portableModeRestartTitle')}
+                </h3>
+                <p className="mt-2 text-sm leading-5 text-secondary">
+                  {i18nService.t('portableModeRestartDescription')}
+                </p>
+                {!portableModeResult.migrated && (
+                  <p className="mt-2 text-xs leading-4 text-secondary">
+                    {i18nService.t('portableModeMigrationSkipped')}
+                  </p>
+                )}
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPortableModeResult(null)}
+                    className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-raised"
+                  >
+                    {i18nService.t('later')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void window.electron.appInfo.relaunch();
+                    }}
+                    className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+                  >
+                    {i18nService.t('portableModeRestartNow')}
+                  </button>
+                </div>
+              </Modal>
+            )}
           </div>
         );
 

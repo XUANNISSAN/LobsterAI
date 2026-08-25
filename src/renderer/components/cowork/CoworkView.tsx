@@ -19,6 +19,7 @@ import {
   selectIsEnterpriseAccount,
 } from '../../features/enterpriseAccount/selectors';
 import { agentService } from '../../services/agent';
+import { configService } from '../../services/config';
 import { coworkService } from '../../services/cowork';
 import { buildCoworkCapabilitySelection } from '../../services/coworkCapabilitySelection';
 import { i18nService } from '../../services/i18n';
@@ -369,9 +370,14 @@ const CoworkView: React.FC<CoworkViewProps> = ({
         const apiConfig = await coworkService.checkApiConfig();
         if (apiConfig && !apiConfig.hasConfig) {
           // No usable model config: steer toward plan models (login/subscribe)
-          // rather than opening the custom-model settings page uninvited.
+          // rather than opening the custom-model settings page uninvited. In
+          // login-free mode the same prompt points at local model setup.
           setModelAccessPrompt(
-            isLoggedIn ? ModelAccessPromptKind.Subscribe : ModelAccessPromptKind.Login,
+            isLoggedIn
+              ? ModelAccessPromptKind.Subscribe
+              : configService.getConfig().loginFreeMode === true
+                ? ModelAccessPromptKind.LocalModel
+                : ModelAccessPromptKind.Login,
           );
           isStartingRef.current = false;
           return false;

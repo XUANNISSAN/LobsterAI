@@ -42,6 +42,7 @@ import {
 } from '../shared/analytics/constants';
 import { AppIpcChannel } from '../shared/app/constants';
 import { AppSettingsAutoLaunchErrorCode, AppSettingsIpc } from '../shared/appSettings/constants';
+import type { PortableModeSetResult } from '../shared/appSettings/portableMode';
 import { AppUpdateIpc } from '../shared/appUpdate/constants';
 import { ArtifactBrowserPartition, ArtifactPreviewIpc, ArtifactPreviewProtocol } from '../shared/artifactPreview/constants';
 import { createAccountOwnerKey } from '../shared/auth/accountOwner';
@@ -491,6 +492,15 @@ import {
 } from './openclawSessionPolicy/store';
 import { registerVoiceInputPermissionHandler } from './permissions/voiceInputPermission';
 import { isHiddenUserPluginId } from './plugins/pluginManager';
+import {
+  buildPortableModePaths,
+  copyPortableDataSync,
+  getPortableDataDir,
+  getPortableLogDir,
+  isPortableMarkerPresent,
+  portableDataDirHasDatabase,
+  resolvePortableBaseDir,
+} from './portableMode';
 import { SkillManager } from './skills/skillManager';
 import { getSkillServiceManager } from './skills/skillServices';
 import {
@@ -1773,11 +1783,69 @@ const configureUserDataPath = (): void => {
   const appDataPath = app.getPath('appData');
   const preferredUserDataPath = path.join(appDataPath, APP_NAME);
   const currentUserDataPath = app.getPath('userData');
+  const portableDataDir = portableModeActive && portableBaseDirForApp
+    ? getPortableDataDir(portableBaseDirForApp)
+    : null;
+
+  if (portableDataDir) {
+    if (currentUserDataPath !== portableDataDir) {
+      app.setPath('userData', portableDataDir);
+      console.log(
+        `[Main][Portable] userData path updated: ${currentUserDataPath} -> ${portableDataDir}`,
+      );
+    }
+    try {
+      fs.mkdirSync(portableDataDir, { recursive: true });
+    } catch (error) {
+      console.error('[Main][Portable] failed to create portable data dir:', error);
+    }
+    return;
+  }
 
   if (currentUserDataPath !== preferredUserDataPath) {
     app.setPath('userData', preferredUserDataPath);
     console.log(`[Main] userData path updated: ${currentUserDataPath} -> ${preferredUserDataPath}`);
   }
+};
+
+/** Portable marker/base dir, resolved once before the store is opened. */
+const PORTABLE_BASE_DIR_ENV = 'LOBSTERAI_PORTABLE_BASE_DIR';
+const resolvePortableBaseDirForApp = (): string | null => {
+  const override = process.env[PORTABLE_BASE_DIR_ENV]?.trim();
+  if (override) {
+    console.log(`[Main][Portable] base dir override from env: ${override}`);
+    return resolvePortableBaseDir({ execPath: override, portableExecutableDir: null });
+  }
+  if (process.env.PORTABLE_EXECUTABLE_DIR?.trim()) {
+    return resolvePortableBaseDir({
+      execPath: process.execPath,
+      portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR,
+    });
+  }
+  // The marker must never be created in the packaged Electron dev binary dir.
+  if (!app.isPackaged) return null;
+  return resolvePortableBaseDir({ execPath: process.execPath, portableExecutableDir: null });
+};
+
+const portableBaseDirForApp = resolvePortableBaseDirForApp();
+const portableModeActive = isPortableMarkerPresent(portableBaseDirForApp);
+if (portableModeActive) {
+  console.log(`[Main][Portable] portable mode active, baseDir=${portableBaseDirForApp}`);
+}
+
+const getDefaultUserDataPath = (): string => path.join(app.getPath('appData'), APP_NAME);
+
+const resolvePortableModeStatus = () => {
+  const baseDir = portableBaseDirForApp;
+  const supported = baseDir !== null;
+  return buildPortableModePaths({
+    baseDir,
+    defaultUserDataDir: getDefaultUserDataPath(),
+    execPath: process.execPath,
+    portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR,
+    supported,
+    unsupportedReason: supported ? undefined : 'Portable mode is only available in packaged builds',
+  });
 };
 
 configureUserDataPath();
@@ -1790,7 +1858,11 @@ try {
 } catch (error) {
   console.error('[DataMigration] pending restore failed before logger initialization:', error);
 }
-initLogger();
+initLogger(
+  portableModeActive && portableBaseDirForApp
+    ? getPortableLogDir(portableBaseDirForApp)
+    : undefined,
+);
 if (startupDataMigrationRestoreResult) {
   const status = startupDataMigrationRestoreResult.status;
   console.log(`[DataMigration] pending restore finished with status ${status}`);
@@ -4062,6 +4134,8 @@ type AppConfigSettings = {
   useSystemProxy?: boolean;
   sqliteAutoBackupEnabled?: boolean;
   usageAnalyticsEnabled?: boolean;
+  loginFreeMode?: boolean;
+  autoUpdateCheckEnabled?: boolean;
   notificationSettings?: Partial<NotificationSettings>;
   browserWebAccess?: Partial<BrowserWebAccessConfig>;
 };
@@ -4676,6 +4750,83 @@ if (!gotTheLock) {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to set prevent-sleep',
       };
+    }
+  });
+
+  ipcMain.handle(AppSettingsIpc.GetPortableModeStatus, () => resolvePortableModeStatus());
+
+  ipcMain.handle(AppSettingsIpc.SetPortableMode, async (_event, enabled: unknown) => {
+    const currentStatus = resolvePortableModeStatus();
+    const failure = (error: string): PortableModeSetResult => ({
+      success: false,
+      active: currentStatus.active,
+      migrated: false,
+      sourceDir: currentStatus.active && currentStatus.dataDir
+        ? currentStatus.dataDir
+        : currentStatus.defaultUserDataDir,
+      targetDir: currentStatus.active ? currentStatus.defaultUserDataDir : (currentStatus.dataDir ?? ''),
+      error,
+    });
+    if (typeof enabled !== 'boolean') {
+      return failure('Invalid parameter: enabled must be boolean');
+    }
+    if (!currentStatus.supported || !currentStatus.baseDir || !currentStatus.dataDir || !currentStatus.markerPath) {
+      return failure(currentStatus.unsupportedReason ?? 'Portable mode is not available in this build');
+    }
+    if (enabled === currentStatus.active) {
+      return {
+        success: true,
+        active: currentStatus.active,
+        migrated: false,
+        sourceDir: currentStatus.active ? currentStatus.dataDir : currentStatus.defaultUserDataDir,
+        targetDir: currentStatus.active ? currentStatus.dataDir : currentStatus.defaultUserDataDir,
+      };
+    }
+
+    // The source DB is open in this process in both directions, so the
+    // database is migrated through the SQLite online backup API; the rest of
+    // the user data is copied file-by-file (Chromium caches excluded).
+    const migrateUserDataToTarget = async (sourceDir: string, targetDir: string): Promise<boolean> => {
+      if (portableDataDirHasDatabase(targetDir)) return false;
+      const backupTmpPath = path.join(targetDir, `${DB_FILENAME}.portable-pending`);
+      try {
+        const copyResult = copyPortableDataSync(sourceDir, targetDir);
+        if (copyResult.error) throw new Error(copyResult.error);
+        await getStore().getDatabase().backup(backupTmpPath);
+        fs.renameSync(backupTmpPath, path.join(targetDir, DB_FILENAME));
+        return copyResult.copied;
+      } catch (backupError) {
+        // A partial backup must not block a later retry.
+        fs.rmSync(backupTmpPath, { force: true });
+        throw backupError;
+      }
+    };
+
+    try {
+      if (enabled) {
+        // Enable: current (default) user data -> <appDir>/data.
+        const sourceDir = app.getPath('userData');
+        const targetDir = currentStatus.dataDir;
+        const migrated = await migrateUserDataToTarget(sourceDir, targetDir);
+        fs.writeFileSync(currentStatus.markerPath, `${new Date().toISOString()}\n`);
+        console.log(
+          `[Main][Portable] enabled: ${sourceDir} -> ${targetDir} (migrated=${migrated})`,
+        );
+        return { success: true, active: true, migrated, sourceDir, targetDir };
+      }
+
+      // Disable: <appDir>/data -> default user data dir, then remove marker.
+      const sourceDir = currentStatus.dataDir;
+      const targetDir = currentStatus.defaultUserDataDir;
+      const migrated = await migrateUserDataToTarget(sourceDir, targetDir);
+      fs.rmSync(currentStatus.markerPath, { force: true });
+      console.log(
+        `[Main][Portable] disabled: ${sourceDir} -> ${targetDir} (migrated=${migrated})`,
+      );
+      return { success: true, active: false, migrated, sourceDir, targetDir };
+    } catch (error) {
+      console.error('[Main][Portable] failed to change portable mode:', error);
+      return failure(error instanceof Error ? error.message : 'Failed to change portable mode');
     }
   });
 

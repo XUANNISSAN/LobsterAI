@@ -155,6 +155,12 @@ export class AppUpdateCoordinator {
       return { success: true, state, updateFound: false };
     }
 
+    if (options?.manual !== true && this.isAutoCheckDisabled()) {
+      console.log('[AppUpdate] automatic update checks are disabled by user setting');
+      const state = this.resetToIdle();
+      return { success: true, state, updateFound: false };
+    }
+
     if (options?.manual === true && this.state.source === AppUpdateSource.Auto) {
       if (this.state.status === AppUpdateStatus.Downloading) {
         console.log('[AppUpdate] manual check is preempting active auto download');
@@ -703,6 +709,11 @@ export class AppUpdateCoordinator {
   private isUpdateDisabled(): boolean {
     const enterprise = this.store.get<{ disableUpdate?: boolean }>('enterprise_config');
     return enterprise?.disableUpdate === true;
+  }
+
+  private isAutoCheckDisabled(): boolean {
+    const appConfig = this.store.get<{ autoUpdateCheckEnabled?: boolean }>('app_config');
+    return appConfig?.autoUpdateCheckEnabled === false;
   }
 
   private isDefenderExclusionDisabled(): boolean {

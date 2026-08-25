@@ -13,9 +13,9 @@
  *   - Files older than 7 days are pruned on startup
  */
 
-import path from 'path';
-import fs from 'fs';
 import log from 'electron-log/main';
+import fs from 'fs';
+import path from 'path';
 
 const LOG_RETENTION_DAYS = 7;
 const LOG_MAX_SIZE = 80 * 1024 * 1024; // 80 MB
@@ -34,12 +34,15 @@ function logDir(): string {
 /**
  * Initialize logging system.
  * Must be called early in main process, before any console output.
+ *
+ * In portable mode pass a `logDirectory` next to the executable so logs travel
+ * with the app; otherwise electron-log's library default is used.
  */
-export function initLogger(): void {
+export function initLogger(logDirectory?: string): void {
   // Daily rotation: one file per calendar day
   log.transports.file.resolvePathFn = (vars) => {
-    _logDir = vars.libraryDefaultDir;
-    return path.join(vars.libraryDefaultDir, `main-${todayStr()}.log`);
+    _logDir = logDirectory || vars.libraryDefaultDir;
+    return path.join(_logDir, `main-${todayStr()}.log`);
   };
 
   // File transport config

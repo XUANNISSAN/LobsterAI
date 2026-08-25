@@ -1080,6 +1080,11 @@ const translations: Record<LanguageType, Record<string, string>> = {
     modelSelectorLoginTitle: '套餐模型',
     modelSelectorLoginDesc: '登录并订阅或购买加油包后即可使用套餐模型',
     modelSelectorLoginBtn: '去登录',
+    modelSelectorLocalModelTitle: '使用本地模型',
+    modelSelectorLocalModelDesc:
+      '免登录模式下，请先在“设置 → 模型”中配置本地或自定义模型；登录后也可使用套餐模型。',
+    modelSelectorLocalModelBtn: '配置模型',
+    modelSelectorLocalModelLogin: '去登录',
     modelSelectorSubscribeTitle: '套餐模型',
     modelSelectorSubscribeDesc: '订阅套餐或购买加油包后即可使用更多模型',
     modelSelectorSubscribeBtn: '去购买',
@@ -2959,6 +2964,34 @@ const translations: Record<LanguageType, Record<string, string>> = {
     usageAnalyticsEnabled: '帮助改进 LobsterAI',
     usageAnalyticsEnabledDescription:
       '允许发送基础使用统计，帮助我们改进功能体验。不会上传对话内容、文件内容或 API Key。',
+    // 运行模式
+    settingsGroupRuntime: '运行模式',
+    loginFreeMode: '免登录模式',
+    loginFreeModeDescription:
+      '开启后无需登录即可使用本地/自定义模型；套餐模型、语音输入等账户功能仍需要登录',
+    autoUpdateCheckEnabled: '检测更新',
+    autoUpdateCheckEnabledDescription:
+      '启动、定时与窗口恢复时自动检测应用更新；关闭后仍可在“关于”页手动检查',
+    portableMode: '便携模式',
+    portableModeDescription:
+      '将全部数据保存在 LobsterAI.exe 所在目录的 data 文件夹中，可连同安装目录拷贝到其他 Windows 电脑，无需重新配置',
+    portableModeNotSupported: '当前环境不支持便携模式（仅在打包安装版中可用）',
+    portableModeDataDirActive: '当前数据目录：{path}',
+    portableModeDataDirDefault: '当前数据目录：{path}（默认）',
+    portableModeEnableTitle: '启用便携模式',
+    portableModeDisableTitle: '关闭便携模式',
+    portableModeEnableDescription:
+      '数据将迁移到“{to}”。重启后应用数据（配置、会话、日志等）将随安装目录移动。',
+    portableModeDisableDescription:
+      '数据将迁移回“{to}”。重启后应用将使用系统默认数据目录。',
+    portableModeMigrateNote: '如果目标目录已有数据，将保留现有数据，不会覆盖。',
+    portableModeRestartTitle: '重启应用以生效',
+    portableModeRestartDescription: '便携模式设置已保存，重启应用后生效。',
+    portableModeRestartNow: '立即重启',
+    portableModeMigrationSkipped: '目标目录已有数据，本次未迁移数据。',
+    portableModeUpdateFailed: '切换便携模式失败',
+    later: '稍后',
+    processing: '处理中…',
     // 通用设置分组标题
     settingsGroupBasics: '常规',
     settingsGroupNotifications: '通知',
@@ -3311,7 +3344,8 @@ const translations: Record<LanguageType, Record<string, string>> = {
     welcomeTitle: '登录到 LobsterAI',
     welcomePromo: '登录即送百万Token',
     welcomeLogin: '登录',
-    welcomeCustomModel: '自定义模型',
+    welcomeCustomModel: '免登录使用',
+    welcomeCustomModelHint: '无需账号，配置本地或自定义模型后直接使用',
     welcomeAgreementNotice: '继续即表示您已阅读并同意{link}',
     welcomeAgreementLinkText: '《网易有道LobsterAI服务协议》',
     welcomeCopyright: '© {year} 网易有道',
@@ -4550,6 +4584,11 @@ const translations: Record<LanguageType, Record<string, string>> = {
     modelSelectorLoginTitle: 'Plan Models',
     modelSelectorLoginDesc: 'Log in and subscribe or purchase a booster pack to use plan models',
     modelSelectorLoginBtn: 'Log in',
+    modelSelectorLocalModelTitle: 'Use local models',
+    modelSelectorLocalModelDesc:
+      'In login-free mode, configure a local or custom model under Settings → Models. You can also log in to use plan models.',
+    modelSelectorLocalModelBtn: 'Configure model',
+    modelSelectorLocalModelLogin: 'Log in',
     modelSelectorSubscribeTitle: 'Plan Models',
     modelSelectorSubscribeDesc: 'Subscribe or purchase a booster pack to unlock more models',
     modelSelectorSubscribeBtn: 'Purchase',
@@ -6572,6 +6611,34 @@ const translations: Record<LanguageType, Record<string, string>> = {
     usageAnalyticsEnabled: 'Help improve LobsterAI',
     usageAnalyticsEnabledDescription:
       'Allow basic usage analytics to help improve the product. Chat content, file content, and API keys are not uploaded.',
+    // Runtime mode
+    settingsGroupRuntime: 'Runtime mode',
+    loginFreeMode: 'Login-free mode',
+    loginFreeModeDescription:
+      'Use local/custom models without logging in. Account features such as plan models and voice input still require login.',
+    autoUpdateCheckEnabled: 'Check for updates',
+    autoUpdateCheckEnabledDescription:
+      'Automatically check for updates on startup, on a timer, and when the window regains focus. Manual checks remain available on the About page.',
+    portableMode: 'Portable mode',
+    portableModeDescription:
+      'Keep all data in a data folder next to LobsterAI.exe so the app folder can be copied to another Windows PC without reconfigure.',
+    portableModeNotSupported: 'Portable mode is not available in this environment (packaged builds only)',
+    portableModeDataDirActive: 'Current data directory: {path}',
+    portableModeDataDirDefault: 'Current data directory: {path} (default)',
+    portableModeEnableTitle: 'Enable portable mode',
+    portableModeDisableTitle: 'Disable portable mode',
+    portableModeEnableDescription:
+      'Data will be copied to “{to}”. After restart, app data (settings, sessions, logs, ...) will travel with the installation folder.',
+    portableModeDisableDescription:
+      'Data will be copied back to “{to}”. After restart the app will use the system default data directory.',
+    portableModeMigrateNote: 'If the target directory already has data, it will be kept and nothing is overwritten.',
+    portableModeRestartTitle: 'Restart to apply',
+    portableModeRestartDescription: 'Portable mode was changed. Restart the app to apply it.',
+    portableModeRestartNow: 'Restart now',
+    portableModeMigrationSkipped: 'The target directory already had data; nothing was migrated.',
+    portableModeUpdateFailed: 'Failed to change portable mode',
+    later: 'Later',
+    processing: 'Processing…',
     // General settings group titles
     settingsGroupBasics: 'General',
     settingsGroupNotifications: 'Notifications',
@@ -6937,7 +7004,8 @@ const translations: Record<LanguageType, Record<string, string>> = {
     welcomeTitle: 'Log in to LobsterAI',
     welcomePromo: 'Log in for 1M free tokens',
     welcomeLogin: 'Log in',
-    welcomeCustomModel: 'Custom Model',
+    welcomeCustomModel: 'Use without login',
+    welcomeCustomModelHint: 'No account needed — configure a local or custom model and start using it',
     welcomeAgreementNotice: 'By continuing, you agree to the {link}',
     welcomeAgreementLinkText: 'NetEase Youdao LobsterAI Terms of Service',
     welcomeCopyright: '© {year} NetEase Youdao',

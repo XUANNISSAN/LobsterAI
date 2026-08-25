@@ -3,6 +3,8 @@ export const AppSettingsIpc = {
   SetAutoLaunch: 'app:setAutoLaunch',
   GetPreventSleep: 'app:getPreventSleep',
   SetPreventSleep: 'app:setPreventSleep',
+  GetPortableModeStatus: 'app:getPortableModeStatus',
+  SetPortableMode: 'app:setPortableMode',
 } as const;
 
 export type AppSettingsIpc = typeof AppSettingsIpc[keyof typeof AppSettingsIpc];
