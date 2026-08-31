@@ -37,6 +37,7 @@ import { decryptSecret, decryptWithPassword, EncryptedPayload, encryptWithPasswo
 import { i18nService, LanguageType } from '../services/i18n';
 import { imService } from '../services/im';
 import { LogReporterAction, reportYdAnalyzer } from '../services/logReporter';
+import { clearPendingPublishingConversionAttribution } from '../services/publishingConversionAttribution';
 import { formatShortcutForDisplay, getShortcutConflictSignature, isTextEditingSafeShortcut, matchesShortcut } from '../services/shortcuts';
 import {
   type ThemeDefaultChangedDetail,
@@ -1792,7 +1793,7 @@ const Settings: React.FC<SettingsProps> = ({
   const [tempCleanPreviewDirs, setTempCleanPreviewDirs] = useState<CoworkTempDirPreview[]>([]);
   const [tempCleanSelection, setTempCleanSelection] = useState<Record<string, boolean>>({});
   const [showTempCleanConfirm, setShowTempCleanConfirm] = useState<boolean>(false);
-  const [openClawHeartbeatEnabled, setOpenClawHeartbeatEnabled] = useState<boolean>(coworkConfig.openClawHeartbeatEnabled ?? true);
+  const [openClawHeartbeatEnabled, setOpenClawHeartbeatEnabled] = useState<boolean>(coworkConfig.openClawHeartbeatEnabled ?? false);
   const [embeddingEnabled, setEmbeddingEnabled] = useState<boolean>(coworkConfig.embeddingEnabled ?? false);
   const [embeddingProvider, setEmbeddingProvider] = useState<string>(coworkConfig.embeddingProvider ?? 'openai');
   const [embeddingModel, setEmbeddingModel] = useState<string>(coworkConfig.embeddingModel ?? '');
@@ -1834,7 +1835,7 @@ const Settings: React.FC<SettingsProps> = ({
     setCoworkMemoryEnabled(coworkConfig.memoryEnabled ?? true);
     setCoworkMemoryLlmJudgeEnabled(coworkConfig.memoryLlmJudgeEnabled ?? false);
     setSkipMissedJobs(coworkConfig.skipMissedJobs ?? true);
-    setOpenClawHeartbeatEnabled(coworkConfig.openClawHeartbeatEnabled ?? true);
+    setOpenClawHeartbeatEnabled(coworkConfig.openClawHeartbeatEnabled ?? false);
     setEmbeddingEnabled(coworkConfig.embeddingEnabled ?? false);
     setEmbeddingProvider(coworkConfig.embeddingProvider ?? 'openai');
     setEmbeddingModel(coworkConfig.embeddingModel ?? '');
@@ -2879,7 +2880,7 @@ const Settings: React.FC<SettingsProps> = ({
     || coworkMemoryEnabled !== coworkConfig.memoryEnabled
     || coworkMemoryLlmJudgeEnabled !== coworkConfig.memoryLlmJudgeEnabled
     || skipMissedJobs !== (coworkConfig.skipMissedJobs ?? true)
-    || openClawHeartbeatEnabled !== (coworkConfig.openClawHeartbeatEnabled ?? true)
+    || openClawHeartbeatEnabled !== (coworkConfig.openClawHeartbeatEnabled ?? false)
     || openClawSessionKeepAlive !== (coworkConfig.openClawSessionPolicy?.keepAlive || OpenClawSessionKeepAliveValues.ThirtyDays)
     || embeddingEnabled !== (coworkConfig.embeddingEnabled ?? false)
     || embeddingProvider !== (coworkConfig.embeddingProvider ?? 'openai')
@@ -3440,7 +3441,7 @@ const Settings: React.FC<SettingsProps> = ({
         ? normalizeProvidersForSettingsSave(previousConfig.providers as ProvidersConfig)
         : normalizedProviders;
       const previousSkipMissedJobs = coworkConfig.skipMissedJobs ?? true;
-      const previousOpenClawHeartbeatEnabled = coworkConfig.openClawHeartbeatEnabled ?? true;
+      const previousOpenClawHeartbeatEnabled = coworkConfig.openClawHeartbeatEnabled ?? false;
       const previousAgentEngine = coworkConfig.agentEngine || 'openclaw';
       const previousOpenClawSessionKeepAlive = coworkConfig.openClawSessionPolicy?.keepAlive
         || OpenClawSessionKeepAliveValues.ThirtyDays;
@@ -3522,6 +3523,10 @@ const Settings: React.FC<SettingsProps> = ({
         },
       });
 
+      if (!usageAnalyticsEnabled) {
+        clearPendingPublishingConversionAttribution();
+      }
+
       if (previousArtifactAutoPreviewEnabled !== artifactAutoPreviewEnabled) {
         console.log(
           `[Settings] artifact auto-preview preference updated: enabled=${artifactAutoPreviewEnabled}`,
@@ -3563,6 +3568,11 @@ const Settings: React.FC<SettingsProps> = ({
       dispatch(setAvailableModels(allModels));
 
       if (hasCoworkConfigChanges) {
+        if (previousOpenClawHeartbeatEnabled !== openClawHeartbeatEnabled) {
+          console.log(
+            `[Settings] updating OpenClaw heartbeat: enabled=${openClawHeartbeatEnabled}, previous=${previousOpenClawHeartbeatEnabled}`,
+          );
+        }
         const updated = await coworkService.updateConfig({
           agentEngine: coworkAgentEngine,
           memoryEnabled: coworkMemoryEnabled,
@@ -4679,7 +4689,7 @@ const Settings: React.FC<SettingsProps> = ({
           {i18nService.t('appearance')}
         </h4>
 
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid max-w-xl grid-cols-3 gap-3 mb-4">
           {(['light', 'dark', 'system'] as const).map((mode) => {
             const isSelected = !activeSkin && theme === mode;
             return (
@@ -4788,8 +4798,6 @@ const Settings: React.FC<SettingsProps> = ({
         </h4>
         {(() => {
           const allThemes = themeService.getAllThemes();
-          const classicThemes = allThemes.filter(t => t.meta.id === 'classic-light' || t.meta.id === 'classic-dark');
-          const otherThemes = allThemes.filter(t => t.meta.id !== 'classic-light' && t.meta.id !== 'classic-dark');
           const renderTile = (t: import('../theme').ThemeDefinition) => {
             const isSelected = !activeSkin && themeId === t.meta.id;
             const [bg, c1, c2, c3] = t.meta.preview;
@@ -4819,14 +4827,9 @@ const Settings: React.FC<SettingsProps> = ({
             );
           };
           return (
-            <>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                {classicThemes.map(renderTile)}
-              </div>
-              <div className="grid grid-cols-4 gap-3">
-                {otherThemes.map(renderTile)}
-              </div>
-            </>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
+              {allThemes.map(renderTile)}
+            </div>
           );
         })()}
 
@@ -6143,12 +6146,12 @@ const Settings: React.FC<SettingsProps> = ({
       onClose={guardedClose}
       onEscape={handleEscape}
       overlayClassName="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-3 sm:p-4"
-      className="w-[calc(100vw-1.5rem)] max-w-[900px] min-w-0 sm:w-[calc(100vw-2rem)]"
+      className="w-[calc(100vw-1.5rem)] min-w-0 sm:w-[85vw] max-w-[1200px]"
     >
       <SkinPresentationScope
         enabled
         data-skin-settings="true"
-        className="relative flex h-[80vh] max-h-[calc(100vh-2rem)] w-full min-w-0 rounded-2xl border-border border shadow-modal overflow-hidden modal-content"
+        className="relative flex h-[min(90vh,calc(100vh-6rem))] w-full min-w-0 rounded-2xl border-border border shadow-modal overflow-hidden modal-content"
         onClick={handleSettingsClick}
       >
         {/* Left sidebar */}
