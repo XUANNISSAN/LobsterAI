@@ -8,6 +8,10 @@ import type {
   ActivityResult,
   ActivitySlotResponse,
 } from '../../shared/activity/constants';
+import type {
+  PortableModeSetResult,
+  PortableModeStatus,
+} from '../../shared/appSettings/portableMode';
 import type { AppUpdateCheckResult, AppUpdateRuntimeState } from '../../shared/appUpdate/constants';
 import type {
   AsrRealtimeSessionRequest,
@@ -1413,6 +1417,10 @@ interface IElectronAPI {
   preventSleep: {
     get: () => Promise<{ enabled: boolean }>;
     set: (enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+  };
+  portableMode: {
+    getStatus: () => Promise<PortableModeStatus>;
+    set: (enabled: boolean) => Promise<PortableModeSetResult>;
   };
   appInfo: {
     getVersion: () => Promise<string>;

@@ -122,13 +122,16 @@ const WelcomeDialog: React.FC<WelcomeDialogProps> = ({
                 {i18nService.t('welcomeLogin')}
               </button>
 
-              {/* secondary: custom model — quiet ghost style */}
+              {/* secondary: login-free entry — quiet ghost style */}
               <button
                 onClick={onCustomModel}
                 className="mt-3 w-full h-11 rounded-xl text-sm font-medium text-secondary border border-border bg-transparent hover:text-foreground hover:bg-surface-raised transition-colors outline-none"
               >
                 {i18nService.t('welcomeCustomModel')}
               </button>
+              <p className="mt-2 text-xs text-secondary text-center">
+                {i18nService.t('welcomeCustomModelHint')}
+              </p>
             </>
           )}
         </div>

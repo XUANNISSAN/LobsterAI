@@ -128,6 +128,29 @@ describe('AppUpdateCoordinator', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  test('skips automatic checks when the user disabled update checks, but allows manual checks', async () => {
+    const store = createStoreStub();
+    store.set('app_config', { autoUpdateCheckEnabled: false });
+    const coordinator = new AppUpdateCoordinator(store);
+
+    const autoResult = await coordinator.checkNow();
+
+    expect(autoResult.success).toBe(true);
+    expect(autoResult.state.status).toBe(AppUpdateStatus.Idle);
+    expect(autoResult.updateFound).toBe(false);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 0, data: { value: { version: '1.0.0' } } }),
+    });
+    const manualResult = await coordinator.checkNow({ manual: true });
+
+    expect(manualResult.success).toBe(true);
+    expect(mocks.fetch).toHaveBeenCalled();
+    expect(manualResult.updateFound).toBe(false);
+  });
+
   test('rejects an API-supplied insecure Windows installer URL with a stable error', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     mocks.fetch.mockResolvedValue({

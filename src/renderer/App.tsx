@@ -56,7 +56,7 @@ import { SkinProvider } from './providers/SkinProvider';
 import type { ApiConfig } from './services/api';
 import { apiService } from './services/api';
 import { authService } from './services/auth';
-import { configService } from './services/config';
+import { configService, ConfigServiceEvent } from './services/config';
 import { coworkService } from './services/cowork';
 import { isTestModeEnabled } from './services/endpoints';
 import { i18nService } from './services/i18n';
@@ -159,6 +159,7 @@ const logAppUpdateRendererLifecycle = (
 const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsOptions, setSettingsOptions] = useState<SettingsOpenOptions & { requestId: number }>({ requestId: 0 });
+  const [runtimeConfigVersion, setRuntimeConfigVersion] = useState(0);
   const [mainView, setMainView] = useState<'cowork' | 'skills' | 'scheduledTasks' | 'kits' | 'mcp' | 'sites'>('cowork');
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -1066,6 +1067,13 @@ const App: React.FC = () => {
   }, []);
   const handleWelcomeCustomModel = useCallback(async () => {
     await acceptPrivacyAgreement();
+    // Entering without login turns the login-free mode on for future launches;
+    // the user is then guided straight to local/custom model configuration.
+    try {
+      await configService.updateConfig({ loginFreeMode: true });
+    } catch (error) {
+      console.warn('[App] failed to persist login-free mode from welcome screen:', error);
+    }
     handleShowSettings({ initialTab: 'model' });
   }, [acceptPrivacyAgreement, handleShowSettings]);
 
@@ -1478,11 +1486,32 @@ const App: React.FC = () => {
     });
   }, [mainView, showSettings, currentSessionId]);
 
+  // Re-evaluate runtime switches (login-free mode, auto update checks) when
+  // the saved config is updated from the settings screen.
+  useEffect(() => {
+    const sync = () => setRuntimeConfigVersion((version) => version + 1);
+    window.addEventListener(ConfigServiceEvent.Updated, sync);
+    return () => window.removeEventListener(ConfigServiceEvent.Updated, sync);
+  }, []);
+
+  // Allow prompt dialogs / other surfaces to open settings on a specific tab.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ initialTab?: SettingsOpenOptions['initialTab'] }>).detail;
+      handleShowSettings({ initialTab: detail?.initialTab });
+    };
+    window.addEventListener('lobsterai:openSettings', handler);
+    return () => window.removeEventListener('lobsterai:openSettings', handler);
+  }, [handleShowSettings]);
+
   useEffect(() => {
     if (!isInitialized) return;
 
     // Enterprise mode: completely skip update detection
     if (enterpriseConfig?.disableUpdate) return;
+
+    // User switch: no automatic update checks (manual checks still work).
+    if (configService.getConfig().autoUpdateCheckEnabled === false) return;
 
     let cancelled = false;
     let lastCheckTime = 0;
@@ -1517,7 +1546,7 @@ const App: React.FC = () => {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isInitialized, runUpdateCheck, enterpriseConfig]);
+  }, [isInitialized, runUpdateCheck, enterpriseConfig, runtimeConfigVersion]);
 
   // 根据场景选择使用哪个权限组件。最小化时保持组件挂载（仅视觉隐藏），
   // 避免重新展开后丢失用户已选择/已输入的内容；key 按 requestId 隔离不同请求的状态。

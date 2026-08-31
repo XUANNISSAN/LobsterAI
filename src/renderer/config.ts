@@ -136,6 +136,10 @@ export interface AppConfig {
   sqliteAutoBackupEnabled?: boolean;
   // 是否允许发送基础产品使用统计
   usageAnalyticsEnabled?: boolean;
+  // 免登录模式：不强制登录，直接使用本地/自定义模型
+  loginFreeMode?: boolean;
+  // 是否自动检测应用更新（关闭后仍可手动检查）
+  autoUpdateCheckEnabled?: boolean;
   // 通知配置
   notificationSettings?: NotificationSettings;
   // 浏览器与网页访问配置
@@ -194,6 +198,8 @@ export const defaultConfig: AppConfig = {
   artifactAutoPreviewEnabled: true,
   sqliteAutoBackupEnabled: false,
   usageAnalyticsEnabled: true,
+  loginFreeMode: false,
+  autoUpdateCheckEnabled: true,
   notificationSettings: defaultNotificationSettings,
   browserWebAccess: defaultBrowserWebAccessConfig,
   app: {
